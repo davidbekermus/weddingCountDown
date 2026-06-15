@@ -1,0 +1,22 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isAllowed() {
+      return request.auth != null
+        && request.auth.token.email in [
+          'davidbekermus@gmail.com',
+          'adina.segel1@gmail.com'
+        ];
+    }
+
+    match /mediaLibrary/{userId}/{fileName} {
+      allow read: if isAllowed();
+      allow write: if isAllowed()
+        && request.auth.uid == userId
+        && request.resource.size < 250 * 1024 * 1024
+        && request.resource.contentType.matches('(image|video|audio)/.*');
+      allow delete: if isAllowed() && request.auth.uid == userId;
+    }
+  }
+}

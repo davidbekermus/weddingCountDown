@@ -1,0 +1,75 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAllowed() {
+      return isSignedIn()
+        && request.auth.token.email in [
+          'davidbekermus@gmail.com',
+          'adina.segel1@gmail.com'
+        ];
+    }
+
+    function ownsExisting() {
+      return isAllowed() && resource.data.ownerId == request.auth.uid;
+    }
+
+    function ownsIncoming() {
+      return isAllowed() && request.resource.data.ownerId == request.auth.uid;
+    }
+
+    function isUnlocked() {
+      return !('unlockDate' in resource.data) || resource.data.unlockDate <= request.time;
+    }
+
+    match /users/{userId} {
+      allow read: if isAllowed();
+      allow create, update: if isAllowed() && userId == request.auth.uid;
+      allow delete: if false;
+    }
+
+    match /dailyMessages/{messageId} {
+      allow read: if isAllowed()
+        && (resource.data.ownerId == request.auth.uid
+          || resource.data.recipientEmail == request.auth.token.email);
+      allow create: if ownsIncoming()
+        && request.resource.data.lockedStatus == false;
+      allow update: if ownsExisting()
+        && resource.data.lockedStatus == false
+        && request.resource.data.ownerId == resource.data.ownerId;
+      allow delete: if false;
+    }
+
+    match /mediaLibrary/{mediaId} {
+      allow read: if isAllowed();
+      allow create: if ownsIncoming();
+      allow update: if ownsExisting();
+      allow delete: if ownsExisting();
+    }
+
+    match /surpriseBoxes/{boxId} {
+      allow read: if isAllowed() && (isUnlocked() || resource.data.ownerId == request.auth.uid);
+      allow create: if ownsIncoming() && request.resource.data.kind == 'custom';
+      allow update: if ownsExisting()
+        && resource.data.kind == 'custom'
+        && resource.data.unlockDate > request.time;
+      allow delete: if ownsExisting()
+        && resource.data.kind == 'custom'
+        && resource.data.unlockDate > request.time;
+    }
+
+    match /vaultItems/{itemId} {
+      allow read: if isAllowed() && resource.data.unlockDate <= request.time;
+      allow create, update, delete: if false;
+    }
+
+    match /slideshowManifests/{manifestId} {
+      allow read: if isAllowed() && manifestId == 'wedding-day';
+      allow write: if false;
+    }
+  }
+}
