@@ -433,6 +433,16 @@ button:disabled {
   font-size: 1.05rem;
 }
 
+.sealed-message-note {
+  width: fit-content;
+  border: 1px solid rgba(91, 47, 143, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.5);
+  padding: 0.62rem 0.85rem;
+  font-size: 0.86rem;
+  font-weight: 750;
+}
+
 .inline-memory-link {
   display: inline-flex;
   width: fit-content;

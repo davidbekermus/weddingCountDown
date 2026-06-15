@@ -357,24 +357,51 @@ function DailyMessageComposer({ user }: { user: User }) {
 function TodaysPartnerMessage({ user }: { user: User }) {
   const todayKey = getDateKey();
   const [message, setMessage] = useState<DailyMessage | null>(null);
+  const [outgoingMessage, setOutgoingMessage] = useState<DailyMessage | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     if (!user.email) return;
+    let incomingLoaded = false;
+    let outgoingLoaded = false;
+
+    function markLoaded(type: "incoming" | "outgoing") {
+      if (type === "incoming") incomingLoaded = true;
+      if (type === "outgoing") outgoingLoaded = true;
+      if (incomingLoaded && outgoingLoaded) setIsLoading(false);
+    }
 
     const q = query(
       collection(db, "dailyMessages"),
       where("recipientEmail", "==", user.email.toLowerCase()),
-      where("dateKey", "==", todayKey),
-      limit(1),
     );
 
-    return onSnapshot(q, (snapshot) => {
-      const item = snapshot.docs[0];
-      setMessage(item ? ({ id: item.id, ...item.data() } as DailyMessage) : null);
-      setIsLoading(false);
+    const unsubscribeIncoming = onSnapshot(q, (snapshot) => {
+      const latest = snapshot.docs
+        .map((item) => ({ id: item.id, ...item.data() }) as DailyMessage)
+        .sort((a, b) => b.dateKey.localeCompare(a.dateKey))[0];
+
+      setMessage(latest ?? null);
+      markLoaded("incoming");
     });
-  }, [todayKey, user.email]);
+
+    const unsubscribeOutgoing = onSnapshot(
+      doc(db, "dailyMessages", `${user.uid}_${todayKey}`),
+      (snapshot) => {
+        setOutgoingMessage(
+          snapshot.exists()
+            ? ({ id: snapshot.id, ...snapshot.data() } as DailyMessage)
+            : null,
+        );
+        markLoaded("outgoing");
+      },
+    );
+
+    return () => {
+      unsubscribeIncoming();
+      unsubscribeOutgoing();
+    };
+  }, [todayKey, user.email, user.uid]);
 
   return (
     <section className="glass-card partner-message-card">
@@ -383,14 +410,25 @@ function TodaysPartnerMessage({ user }: { user: User }) {
         <p>Looking for today&apos;s note...</p>
       ) : message ? (
         <>
-          <span className="message-type-pill">{message.type}</span>
-          <h2>A little something arrived.</h2>
+          <span className="message-type-pill">
+            {message.dateKey === todayKey ? "Today" : `From ${message.dateKey}`}
+          </span>
+          <h2>{message.dateKey === todayKey ? "Today's message arrived." : "The latest message for you."}</h2>
           <p className="partner-message-content">{message.content}</p>
           {message.mediaUrl ? (
             <a className="inline-memory-link" href={message.mediaUrl} target="_blank">
               Open attached memory
             </a>
           ) : null}
+        </>
+      ) : outgoingMessage ? (
+        <>
+          <span className="message-type-pill">Your message is saved</span>
+          <h2>Now it is their turn.</h2>
+          <p>
+            Your message for your partner is tucked away. This card will change
+            when they save a message for you.
+          </p>
         </>
       ) : (
         <>

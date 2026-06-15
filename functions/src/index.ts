@@ -13,6 +13,7 @@ const resendApiKey = defineSecret("RESEND_API_KEY");
 const allowedEmails = ["davidbekermus@gmail.com", "adina.segel1@gmail.com"] as const;
 const weddingDate = new Date("2026-09-02T18:00:00+03:00");
 const timeZone = "Asia/Jerusalem";
+const appUrl = "https://wedding-count-down-psi.vercel.app/";
 
 const partnerByEmail: Record<string, string> = {
   "davidbekermus@gmail.com": "adina.segel1@gmail.com",
@@ -58,6 +59,7 @@ function emailHtml(args: {
   recipientEmail: string;
   partnerEmail: string;
   message?: FirebaseFirestore.DocumentData;
+  isFallbackMessage?: boolean;
 }) {
   const countdown = countdownSnapshot();
   const message = args.message;
@@ -73,10 +75,20 @@ function emailHtml(args: {
         ${
           message
             ? `<h2 style="font-family: Georgia, serif;">${message.type}</h2>
+               ${
+                 args.isFallbackMessage
+                   ? `<p style="color:#7b6688;">No new message was created today, so here is the most recent message again.</p>`
+                   : ""
+               }
                <p style="font-size:18px; line-height:1.7;">${message.content}</p>
                ${message.mediaUrl ? `<p><a href="${message.mediaUrl}">Open attached memory</a></p>` : ""}`
-            : `<p style="font-size:18px; line-height:1.7;">No message was created for today yet.</p>`
+            : `<p style="font-size:18px; line-height:1.7;">No message has been created yet.</p>`
         }
+        <p style="margin-top: 28px;">
+          <a href="${appUrl}" style="display:inline-block; background:#7c3aed; color:white; text-decoration:none; padding: 12px 18px; border-radius: 999px; font-weight: 700;">
+            Open the wedding app
+          </a>
+        </p>
       </div>
     </div>
   `;
@@ -149,6 +161,23 @@ export const sendDailyWeddingEmails = onSchedule(
         .get();
 
       const messageDoc = messageSnapshot.docs[0];
+      let message = messageDoc?.data();
+      let isFallbackMessage = false;
+
+      if (!message) {
+        const previousMessages = await db
+          .collection("dailyMessages")
+          .where("ownerEmail", "==", partnerEmail)
+          .where("recipientEmail", "==", recipientEmail)
+          .get();
+
+        const previousMessageDoc = previousMessages.docs
+          .filter((item) => item.data().dateKey < today)
+          .sort((a, b) => b.data().dateKey.localeCompare(a.data().dateKey))[0];
+
+        message = previousMessageDoc?.data();
+        isFallbackMessage = Boolean(message);
+      }
 
       await resend.emails.send({
         from: "Wedding Vault <onboarding@resend.dev>",
@@ -157,7 +186,8 @@ export const sendDailyWeddingEmails = onSchedule(
         html: emailHtml({
           recipientEmail,
           partnerEmail,
-          message: messageDoc?.data(),
+          message,
+          isFallbackMessage,
         }),
       });
 
